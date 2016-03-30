@@ -64,7 +64,7 @@ int main(int argc,char *argv[]){
                 printf("Nao consegue criar o ponto %d, saindo do programa.\n", i);
             }
             err++;
-            printf("Erro ao criar um dos Pontos, tentando novamente.\n");
+            printf("Erro ao criar um dos pontos, tentando novamente.\n");
         }
     }
 
@@ -72,10 +72,10 @@ int main(int argc,char *argv[]){
         err = 0;
         while(pthread_create(carros+i,NULL,carro,NULL)){
             if(err >= 10){
-                printf("Nao consegue criar o ponto %d, saindo do programa.\n", i);
+                printf("Nao consegue criar o carro %d, saindo do programa.\n", i);
             }
             err++;
-            printf("Erro ao criar um dos Pontos, tentando novamente.\n");
+            printf("Erro ao criar um dos carros, tentando novamente.\n");
         }
     }
 
@@ -83,10 +83,10 @@ int main(int argc,char *argv[]){
         err = 0;
         while(pthread_create(passageiros+i,NULL,passageiro,NULL)){
             if(err >= 10){
-                printf("Nao consegue criar o ponto %d, saindo do programa.\n", i);
+                printf("Nao consegue criar o passageiro %d, saindo do programa.\n", i);
             }
             err++;
-            printf("Erro ao criar um dos Pontos, tentando novamente.\n");
+            printf("Erro ao criar um dos passageiros, tentando novamente.\n");
         }
     }
 
