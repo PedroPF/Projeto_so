@@ -10,9 +10,9 @@ typedef struct args_passageiro {
     int id;
 } args_passageiro_t;
 
-typedef struct args_carros {
+typedef struct args_carro {
     int id;
-} args_carros_t;
+} args_carro_t;
 
 typedef struct args_ponto {
     int id;
@@ -20,18 +20,24 @@ typedef struct args_ponto {
 
 
 
-void *passageiro(){
-
+void *passageiro(void *args){
+    args_passageiro_t *temp = (args_passageiro_t *) args;
+    int pid = temp->id;
+    printf("Oi, sou o passageiro numero %d\n", pid);
     return NULL;
 }
 
-void *carros(){
-
+void *carro(void *args){
+    args_carro_t *temp = (args_carro_t *) args;
+    int pid = temp->id;
+    printf("Oi, sou o carro numero %d\n", pid);
     return NULL;
 }
 
-void *ponto(){
-
+void *ponto(void *args){
+    args_ponto_t *temp = (args_ponto_t *) args;
+    int pid = temp->id;
+    printf("Oi, sou o ponto numero %d\n", pid);
     return NULL;
 }
 
@@ -55,11 +61,16 @@ int main(int argc,char *argv[]){
     pthread_t *pontos = calloc(S,sizeof(pthread_t));
     pthread_t *passageiros = calloc(P,sizeof(pthread_t));
 
+    args_carro_t* args_carro_init = calloc(C,sizeof(args_carro_t));
+    args_ponto_t* args_ponto_init = calloc(S,sizeof(args_ponto_t));
+    args_passageiro_t* args_passageiro_init = calloc(P,sizeof(args_passageiro_t));
+
     int i;
     int err;
     for(i=0;i<S;i++){
         err = 0;
-        while(pthread_create(pontos+i,NULL,ponto,NULL)){
+        args_ponto_init[i].id = i;
+        while(pthread_create(pontos+i,NULL,ponto,(void*)(args_ponto_init+i))){
             if(err >= 10){
                 printf("Nao consegue criar o ponto %d, saindo do programa.\n", i);
             }
@@ -70,7 +81,8 @@ int main(int argc,char *argv[]){
 
     for(i=0;i<C;i++){
         err = 0;
-        while(pthread_create(carros+i,NULL,carro,NULL)){
+        args_carro_init[i].id = i;
+        while(pthread_create(carros+i,NULL,carro,(void*)(args_carro_init+i))){
             if(err >= 10){
                 printf("Nao consegue criar o carro %d, saindo do programa.\n", i);
             }
@@ -81,7 +93,8 @@ int main(int argc,char *argv[]){
 
     for(i=0;i<P;i++){
         err = 0;
-        while(pthread_create(passageiros+i,NULL,passageiro,NULL)){
+        args_passageiro_init[i].id = i;
+        while(pthread_create(passageiros+i,NULL,passageiro,(void*)(args_passageiro_init+i))){
             if(err >= 10){
                 printf("Nao consegue criar o passageiro %d, saindo do programa.\n", i);
             }
