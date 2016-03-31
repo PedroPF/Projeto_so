@@ -12,6 +12,7 @@ typedef struct args_passageiro {
 
 typedef struct args_carro {
     int id;
+    int A;
 } args_carro_t;
 
 typedef struct args_ponto {
@@ -82,6 +83,7 @@ int main(int argc,char *argv[]){
     for(i=0;i<C;i++){
         err = 0;
         args_carro_init[i].id = i;
+        args_carro_init[i].A = A;
         while(pthread_create(carros+i,NULL,carro,(void*)(args_carro_init+i))){
             if(err >= 10){
                 printf("Nao consegue criar o carro %d, saindo do programa.\n", i);
