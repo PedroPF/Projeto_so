@@ -5,8 +5,9 @@
 #include <semaphore.h>
 #include <time.h>
 
-
 int S, P, C, A;
+
+char running = 0;
 
 typedef struct args_passageiro {
     int id;                 // pid da thread
@@ -42,6 +43,7 @@ void *carro(void *args){
     args_carro_t *temp = (args_carro_t *) args;
     int pid = temp->id;
     int ponto_atual = temp->ponto_incial;
+    int ponto_inicial;
     pthread_mutex_t **locks_pontos = temp->locks_pontos;
 
     while(pthread_mutex_trylock((*locks_pontos)+ponto_atual) != 0){
@@ -49,6 +51,7 @@ void *carro(void *args){
             ponto_atual =0;
         }
     }
+    ponto_inicial = ponto_atual;
     pthread_mutex_unlock((*locks_pontos)+ponto_atual);
     if(++ponto_atual >= S){
         ponto_atual =0;
@@ -58,7 +61,7 @@ void *carro(void *args){
             ponto_atual =0;
         }
     }
-    printf("carro %d:\tinicio:%d,\tfim:%d\n", pid, temp->ponto_incial, ponto_atual);
+    printf("carro %d:\tinicio:%d,\tfim:%d\n", pid, ponto_inicial, ponto_atual);
     return NULL;
 }
 
