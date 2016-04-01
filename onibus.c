@@ -6,6 +6,7 @@
 #include <time.h>
 
 
+int S, P, C, A;
 
 typedef struct args_passageiro {
     int id;                 // pid da thread
@@ -19,10 +20,12 @@ typedef struct args_carro {
     int A;                  // numero de assentos
     int ponto_incial;       // ponto inicial deste onibus
     pthread_t *pontos;      // vetor com as threads dos pontos
+    pthread_mutex_t **locks_pontos;
 } args_carro_t;
 
 typedef struct args_ponto {
     int id;                 // pid da thread
+    pthread_mutex_t *lock;
 } args_ponto_t;
 
 void *passageiro(void *args){
@@ -31,20 +34,38 @@ void *passageiro(void *args){
     int inicio = temp->inicio;
     int destino = temp->destino;
 
-    printf("Oi, sou o passageiro numero %d, meu inicio e %d e meu destino, %d\n", pid, inicio, destino);
+    //printf("Oi, sou o passageiro numero %d, meu inicio e %d e meu destino, %d\n", pid, inicio, destino);
     return NULL;
 }
 
 void *carro(void *args){
     args_carro_t *temp = (args_carro_t *) args;
     int pid = temp->id;
-    //printf("Oi, sou o carro numero %d\n", pid);
+    int ponto_atual = temp->ponto_incial;
+    pthread_mutex_t **locks_pontos = temp->locks_pontos;
+
+    while(pthread_mutex_trylock((*locks_pontos)+ponto_atual) != 0){
+        if(++ponto_atual >= S){
+            ponto_atual =0;
+        }
+    }
+    pthread_mutex_unlock((*locks_pontos)+ponto_atual);
+    if(++ponto_atual >= S){
+        ponto_atual =0;
+    }
+    while(pthread_mutex_trylock((*locks_pontos)+ponto_atual) != 0){
+        if(++ponto_atual >= S){
+            ponto_atual =0;
+        }
+    }
+    printf("carro %d:\tinicio:%d,\tfim:%d\n", pid, temp->ponto_incial, ponto_atual);
     return NULL;
 }
 
 void *ponto(void *args){
     args_ponto_t *temp = (args_ponto_t *) args;
     int pid = temp->id;
+    pthread_mutex_t *lock = temp->lock;
     //printf("Oi, sou o ponto numero %d\n", pid);
     return NULL;
 }
@@ -68,10 +89,7 @@ int *def_pontos_inciais(int num_pontos, int num_onibus){
     return lista;
 }
 
-
 int main(int argc,char *argv[]){
-
-    int S, P, C, A;
 
     if( argc != 5 ){
         printf("Sintaxe invalida!\n");
@@ -92,6 +110,8 @@ int main(int argc,char *argv[]){
     pthread_t *pontos = calloc(S,sizeof(pthread_t));
     pthread_t *passageiros = calloc(P,sizeof(pthread_t));
 
+    pthread_mutex_t *locks_pontos = calloc(S, sizeof(pthread_mutex_t));
+
     args_carro_t* args_carro_init = calloc(C,sizeof(args_carro_t));
     args_ponto_t* args_ponto_init = calloc(S,sizeof(args_ponto_t));
     args_passageiro_t* args_passageiro_init = calloc(P,sizeof(args_passageiro_t));
@@ -101,9 +121,11 @@ int main(int argc,char *argv[]){
     for(i=0;i<S;i++){
         err = 0;
         args_ponto_init[i].id = i;
+        args_ponto_init[i].lock = locks_pontos+i;
         while(pthread_create(pontos+i,NULL,ponto,(void*)(args_ponto_init+i))){
             if(err >= 10){
                 printf("Nao consegue criar o ponto %d, saindo do programa.\n", i);
+                return(3);
             }
             err++;
             printf("Erro ao criar um dos pontos, tentando novamente.\n");
@@ -118,9 +140,11 @@ int main(int argc,char *argv[]){
         args_carro_init[i].A = A;
         args_carro_init[i].ponto_incial = pontos_iniciais[i];
         args_carro_init[i].pontos = pontos;
+        args_carro_init[i].locks_pontos = &locks_pontos;
         while(pthread_create(carros+i,NULL,carro,(void*)(args_carro_init+i))){
             if(err >= 10){
                 printf("Nao consegue criar o carro %d, saindo do programa.\n", i);
+                return(3);
             }
             err++;
             printf("Erro ao criar um dos carros, tentando novamente.\n");
@@ -140,6 +164,7 @@ int main(int argc,char *argv[]){
         while(pthread_create(passageiros+i,NULL,passageiro,(void*)(args_passageiro_init+i))){
             if(err >= 10){
                 printf("Nao consegue criar o passageiro %d, saindo do programa.\n", i);
+                return(3);
             }
             err++;
             printf("Erro ao criar um dos passageiros, tentando novamente.\n");
