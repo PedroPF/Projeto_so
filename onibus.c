@@ -18,6 +18,7 @@ typedef struct args_passageiro {
 	int inicio;             // Inicio do percurso de cada passageiro
 	int destino;            // Destino final do passageiro 
 	pthread_t *pontos;      // Vetor com as threads dos pontos
+	pthread_t *carros;		// Vetor com as threads dos carros
 } args_passageiro_t;
 
 typedef struct args_carro {
@@ -101,6 +102,43 @@ int *def_pontos_inciais(int num_pontos, int num_onibus){
 	return lista;
 }
 
+typedef struct node {
+	int elem;
+	struct node *prox;
+} node_t;
+
+typedef struct fifo {
+	int size;
+	node_t *first;
+} fifo_t;
+
+void fifo_init(fifo_t *lista){
+	lista->size = 0;
+	lista->first = NULL;
+}
+
+int fifo_insert(int elem, fifo_t *fifo){
+	node_t *new = malloc(sizeof(node_t));
+	if(!new){
+		printf("Nao foi possivel alocar memoria!\n");
+		return 0;
+	}
+	new->elem = elem;
+	fifo->size++;
+	if(fifo->first == NULL){
+		fifo->first = new;
+		new->prox = NULL;
+	} else {
+		new->prox = fifo->first;
+		fifo->first = new->prox;
+	}
+	return 1;
+}
+
+int fifo_pop(fifo_t fifo){
+	// todo
+}
+
 int main(int argc,char *argv[]){
 	//Recebe os argumentos do programa e trata erros 
 	if( argc != 5 ){
@@ -127,13 +165,18 @@ int main(int argc,char *argv[]){
 	args_ponto_t* args_ponto_init = calloc(S,sizeof(args_ponto_t));
 	args_passageiro_t* args_passageiro_init = calloc(P,sizeof(args_passageiro_t));
 
-	//Iniciando threads dos pontos
 	int i, temp;
 	int err;
+	
+	//Iniciando threads dos pontos
 	for(i=0;i<S;i++){
 		err = 0;
 		args_ponto_init[i].id = i;
 		args_ponto_init[i].lock = locks_pontos+i;
+		if(pthread_mutex_init(locks_pontos+i,NULL)){
+			printf("Erro ao inicializar um dos Mutex");
+			return 4;
+		}
 		while(pthread_create(pontos+i,NULL,ponto,(void*)(args_ponto_init+i))){
 			if(err >= 10){
 				printf("Erro ao criar o ponto %d, saindo do programa.\n", i);
@@ -194,6 +237,7 @@ int main(int argc,char *argv[]){
 	for(i=0;i<P;i++){
 		pthread_join(passageiros[i], NULL);
 	}
+	
 	//Desalocando a memoria
 	free(carros);
 	free(pontos);
