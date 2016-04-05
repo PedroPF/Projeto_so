@@ -7,7 +7,13 @@
 
 int S, P, C, A; //Número de Paradas(S), Passageiros(P), Carros(C), Assentos(A).
 
-char running = 0;
+//Vetores para guardar threads  
+pthread_t *carros;
+pthread_t *pontos;
+pthread_t *passageiros;
+//Vetor dos mutex que garantem que apenas um onibus ocupe um ponto
+pthread_mutex_t *locks_pontos;
+
 
 /*As structs abaixo iniciadas com "args_" visam
  * simplificar a criacao e admnistraaco das threads 
@@ -17,21 +23,16 @@ typedef struct args_passageiro {
 	int id;                 // PID da thread
 	int inicio;             // Inicio do percurso de cada passageiro
 	int destino;            // Destino final do passageiro 
-	pthread_t *pontos;      // Vetor com as threads dos pontos
-	pthread_t *carros;		// Vetor com as threads dos carros
 } args_passageiro_t;
 
 typedef struct args_carro {
 	int id;                 // PID da thread
 	int A;                  // Numero de assentos
 	int ponto_incial;       // Ponto inicial deste onibus
-	pthread_t *pontos;      // Vetor com as threads dos pontos
-	pthread_mutex_t **locks_pontos;
 } args_carro_t;
 
 typedef struct args_ponto {
 	int id;                 // PID da thread
-	pthread_mutex_t *lock;
 } args_ponto_t;
 
 /* As funcoes abaixo representam as linhas de codigo 
@@ -51,19 +52,18 @@ void *carro(void *args){
 	int pid = temp->id;
 	int ponto_atual = temp->ponto_incial;
 	int ponto_inicial;
-	pthread_mutex_t **locks_pontos = temp->locks_pontos;
 
-	while(pthread_mutex_trylock((*locks_pontos)+ponto_atual) != 0){
+	while(pthread_mutex_trylock(locks_pontos+ponto_atual) != 0){
 		if(++ponto_atual >= S){
 		ponto_atual =0;
 		}
 	}
 	ponto_inicial = ponto_atual;
-	pthread_mutex_unlock((*locks_pontos)+ponto_atual);
+	pthread_mutex_unlock(locks_pontos+ponto_atual);
 	if(++ponto_atual >= S){
 		ponto_atual =0;
 	}
-	while(pthread_mutex_trylock((*locks_pontos)+ponto_atual) != 0){
+	while(pthread_mutex_trylock(locks_pontos+ponto_atual) != 0){
 		if(++ponto_atual >= S){
 		ponto_atual =0;
 		}
@@ -75,7 +75,7 @@ void *carro(void *args){
 void *ponto(void *args){
 	args_ponto_t *temp = (args_ponto_t *) args;
 	int pid = temp->id;
-	pthread_mutex_t *lock = temp->lock;
+	pthread_mutex_t *lock = locks_pontos+pid;
 	//printf("Oi, sou o ponto numero %d\n", pid);
 	return NULL;
 }
@@ -102,8 +102,10 @@ int *def_pontos_inciais(int num_pontos, int num_onibus){
 	return lista;
 }
 
+typedef int elem;
+
 typedef struct node {
-	int elem;
+	elem e;
 	struct node *prox;
 } node_t;
 
@@ -117,26 +119,54 @@ void fifo_init(fifo_t *lista){
 	lista->first = NULL;
 }
 
-int fifo_insert(int elem, fifo_t *fifo){
+int fifo_insert(elem e, fifo_t *fifo){
 	node_t *new = malloc(sizeof(node_t));
 	if(!new){
 		printf("Nao foi possivel alocar memoria!\n");
 		return 0;
 	}
-	new->elem = elem;
+	new->e = e;
 	fifo->size++;
 	if(fifo->first == NULL){
 		fifo->first = new;
-		new->prox = NULL;
 	} else {
 		new->prox = fifo->first;
-		fifo->first = new->prox;
+		fifo->first = new;
 	}
 	return 1;
 }
 
-int fifo_pop(fifo_t fifo){
-	// todo
+elem fifo_pop(fifo_t *fifo){
+	elem temp;
+	node_t *temp_node;
+	if(fifo->size == 0){
+		return -1;
+	} else if(fifo->size == 1){
+		temp = fifo->first->e;
+		free(fifo->first);
+		fifo->first = NULL;
+		fifo->size--;
+		return temp;
+	} else {
+		temp_node = fifo->first;
+		while(temp_node->prox->prox){
+			temp_node = temp_node->prox;
+		}
+		temp = temp_node->prox->e;
+		free(temp_node->prox);
+		temp_node->prox = NULL;
+		fifo->size--;
+		return temp;
+	}
+}
+
+void print_fifo(fifo_t fifo){
+	node_t *temp_node = fifo.first;
+	while(temp_node){
+		printf("%d ",temp_node->e);
+		temp_node = temp_node->prox;
+	}
+	printf("\n");
 }
 
 int main(int argc,char *argv[]){
@@ -155,11 +185,11 @@ int main(int argc,char *argv[]){
 	}
 	printf("S:%d C:%d P:%d A:%d\n", S, C, P, A);
 	//Alocando memoria para threads  
-	pthread_t *carros = calloc(C,sizeof(pthread_t));
-	pthread_t *pontos = calloc(S,sizeof(pthread_t));
-	pthread_t *passageiros = calloc(P,sizeof(pthread_t));
+	carros = calloc(C,sizeof(pthread_t));
+	pontos = calloc(S,sizeof(pthread_t));
+	passageiros = calloc(P,sizeof(pthread_t));
 	//Alocando memoria para o mutex que garante que apenas um onibus ocupe um ponto
-	pthread_mutex_t *locks_pontos = calloc(S, sizeof(pthread_mutex_t));
+	locks_pontos = calloc(S, sizeof(pthread_mutex_t));
 	//Alocando memoria para os valores inicias
 	args_carro_t* args_carro_init = calloc(C,sizeof(args_carro_t));
 	args_ponto_t* args_ponto_init = calloc(S,sizeof(args_ponto_t));
@@ -167,12 +197,23 @@ int main(int argc,char *argv[]){
 
 	int i, temp;
 	int err;
+
+	fifo_t teste;
+	fifo_init(&teste);
+
+	fifo_insert(4, &teste);
+	fifo_insert(7, &teste);
+	fifo_insert(1, &teste);
+
+	printf("%d ", fifo_pop(&teste));
+	printf("%d ", fifo_pop(&teste));
+	printf("%d\n", fifo_pop(&teste));
+
 	
 	//Iniciando threads dos pontos
 	for(i=0;i<S;i++){
 		err = 0;
 		args_ponto_init[i].id = i;
-		args_ponto_init[i].lock = locks_pontos+i;
 		if(pthread_mutex_init(locks_pontos+i,NULL)){
 			printf("Erro ao inicializar um dos Mutex");
 			return 4;
@@ -194,8 +235,6 @@ int main(int argc,char *argv[]){
 		args_carro_init[i].id = i;
 		args_carro_init[i].A = A;
 		args_carro_init[i].ponto_incial = pontos_iniciais[i];
-		args_carro_init[i].pontos = pontos;
-		args_carro_init[i].locks_pontos = &locks_pontos;
 		while(pthread_create(carros+i,NULL,carro,(void*)(args_carro_init+i))){
 			if(err >= 10){
 				printf("Nao consegue criar o carro %d, saindo do programa.\n", i);
