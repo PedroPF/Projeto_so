@@ -140,13 +140,15 @@ typedef struct passageiro {
 	int destino;			// Destino do passageiro
 	int assento;			// Assento que o passageiro ocupa (-1 significa nenhum)
 	int id_carro;			// ID do carro em que o passageiro esta (-1 significa nenhum)
-	char estado;			// Estado do passageiro
+	char estado;			// Estado do passageiro ('w'-esperando onibus, 'e'-entrando no onibus, 'i'-inativo, 
+							//										's'-saindo do onibus, 'v'-viajando no onibus)
 } passageiro_t;
 
 typedef struct carro {
 	pthread_t thread_carro;	// Localizador da thread
 	pthread_mutex_t passageiro_em_movimento;	// Indica se ha um passageiro entrando ou saindo deste onibus
 	pthread_cond_t pode_rodar;					// Indica quando o onibus pode sair do ponto (se todos os passageiros desceram)
+	pthread_mutex_t cond_lock;					// Mutex para utilizar a condicao acima
 	int id;					// ID do carro
 	int *assentos;			// Vetor de assentos do carro
 	int assentos_disponiveis;	// Numero de assentos disponiveis
@@ -168,10 +170,32 @@ void *passageiro(void *args){
 	info->id = temp->id;
 	info->inicio = temp->inicio;
 	info->destino = temp->destino;
+	info->id_carro = -1;
 	info->estado = 'w';		// 'w' de waiting, ou seja, esperando o onibus
 	info->assento = -1;
 
+	pthread_mutex_lock(&info_pontos[info->inicio].fila.lock);
 	fifo_insert(info->id, &info_pontos[info->inicio].fila);
+	pthread_mutex_unlock(&info_pontos[info->inicio].fila.lock);
+
+	while(info->estado != 'v'){
+		pthread_yield();
+	}
+
+	while(info->estado == 'v'){
+		if(info_carros[info->id_carro].ponto_atual == info->destino){
+			pthread_mutex_lock(&info_carros[info->id_carro].passageiro_em_movimento);
+			info->estado = 's';
+			info_carros[info->id_carro].assentos_disponiveis--;
+			info_carros[info->id_carro].assentos[info->assento] = -1;
+			info_carros[info->id_carro].pontos_a_parar[info->destino]--;
+			info->estado = 'i';
+			pthread_mutex_unlock(&info_carros[info->id_carro].passageiro_em_movimento);
+			break;
+		}
+	}
+
+	usleep(100000 * ((rand()%10)+1) );	// passageiro dorme por tempo aleatorio entre 0.1 e 1 segundos
 
 	//printf("Oi, sou o passageiro numero %d, meu inicio e %d e meu destino, %d\n", pid, inicio, destino);
 	return NULL;
@@ -188,6 +212,10 @@ void *carro(void *args){
 	info->assentos = calloc(A,sizeof(int));
 	info->pontos_a_parar = calloc(S,sizeof(int));
 
+	pthread_mutex_lock(&lock_num_carros);
+	num_carros++;
+	pthread_mutex_unlock(&lock_num_carros);
+
 	for(i=0;i<A;i++){
 		info->assentos[i] = -1;
 	}
@@ -200,7 +228,19 @@ void *carro(void *args){
 	info->ponto_inicial = ponto_temp;
 	info->ponto_atual = ponto_temp;
 
+	pthread_mutex_lock(&info->cond_lock);
+	while(info_pontos[info->ponto_atual].fila.size > 0 && info->assentos_disponiveis > 0){
+		pthread_cond_wait(&info->pode_rodar, &info->cond_lock);
+
+	}
+
 	pthread_mutex_unlock(&info_pontos[ponto_temp].lock);
+
+	printf("Onibus %d:", info->id);
+	for(i=0;i<A;i++){
+		printf("%d ", info->assentos[i]);
+	}
+	printf("\n");
 
 	if(++ponto_temp >= S){
 		ponto_temp =0;
@@ -211,6 +251,11 @@ void *carro(void *args){
 		}
 	}
 	printf("carro %d:\tinicio:%d,\tfim:%d\n", info->id, info->ponto_inicial, ponto_temp);
+
+
+	pthread_mutex_lock(&lock_num_carros);
+	num_carros--;
+	pthread_mutex_unlock(&lock_num_carros);
 
 	free(info->assentos);
 	free(info->pontos_a_parar);
@@ -256,9 +301,12 @@ void *ponto(void *args){
 				id_passageiro_temp = info_carros[info->id_carro].assentos[i];
 				if(id_passageiro_temp == -1){
 					id_passageiro_temp = fifo_pop(&info->fila);
-					info_passageiros[id_passageiro_temp].estado = 'v';		// Significa que o passageiro esta 'viajando'
+					info_passageiros[id_passageiro_temp].estado = 'e';				// Significa que o passageiro esta 'entrando'
 					info_passageiros[id_passageiro_temp].id_carro = info->id_carro;	// No carro que esta parado neste ponto
+					info_passageiros[id_passageiro_temp].assento = i;				// No assento i
+					info_carros[info->id_carro].assentos[i] = id_passageiro_temp;
 					pthread_mutex_unlock(&info->fila.lock);
+					info_passageiros[id_passageiro_temp].estado = 'v';
 					break;
 				}
 				pthread_mutex_unlock(&info->fila.lock);
