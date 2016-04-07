@@ -121,13 +121,16 @@ typedef struct args_ponto {
  * facilitar o acesso destas */
 
 int num_pontos = 0;		// Numero de pontos ja criados
+int num_carros = 0;		// Numero de carros ativos
 pthread_mutex_t lock_num_pontos; 	// Mutex para garantir que so um processo modifique este valor por vez
+pthread_mutex_t lock_num_carros;	// Mutex para garantir que so um processo modifique este valor por vez
 
 typedef struct ponto {
 	pthread_t thread_ponto;	// Localizador da thread
 	int id;					// ID do ponto
 	pthread_mutex_t lock;	// Lock do ponto, garante que somente um onibus esta em um ponto qualquer
 	fifo_t fila;			// Fila relacionada ao ponto
+	int id_carro;			// ID do carro parado no ponto
 } ponto_t;
 
 typedef struct passageiro {
@@ -142,10 +145,14 @@ typedef struct passageiro {
 
 typedef struct carro {
 	pthread_t thread_carro;	// Localizador da thread
+	pthread_mutex_t passageiro_em_movimento;	// Indica se ha um passageiro entrando ou saindo deste onibus
+	pthread_cond_t pode_rodar;					// Indica quando o onibus pode sair do ponto (se todos os passageiros desceram)
 	int id;					// ID do carro
 	int *assentos;			// Vetor de assentos do carro
+	int assentos_disponiveis;	// Numero de assentos disponiveis
 	int ponto_inicial;		// Ponto em que o onibus comecou
 	int ponto_atual;		// Ponto em que o onibus se localiza (-1 significa nenhum)
+	int *pontos_a_parar;	// Vetor com o numero de quantos passageiros querem descer em cada ponto;
 } carro_t;
 // A segur, estao vetores que representam os pontos, passageiros e carros
 ponto_t *info_pontos;
@@ -164,11 +171,8 @@ void *passageiro(void *args){
 	info->estado = 'w';		// 'w' de waiting, ou seja, esperando o onibus
 	info->assento = -1;
 
-	while(pthread_mutex_trylock(&info_pontos[info->inicio].fila.lock)){
-		pthread_yield();
-	}
 	fifo_insert(info->id, &info_pontos[info->inicio].fila);
-	pthread_mutex_unlock(&info_pontos[info->inicio].fila.lock);
+
 	//printf("Oi, sou o passageiro numero %d, meu inicio e %d e meu destino, %d\n", pid, inicio, destino);
 	return NULL;
 }
@@ -179,7 +183,14 @@ void *carro(void *args){
 	carro_t *info = info_carros+temp->id;
 	info->id = temp->id;
 	int ponto_temp = temp->ponto_inicial;
+	int i;
+	info->assentos_disponiveis = A;
 	info->assentos = calloc(A,sizeof(int));
+	info->pontos_a_parar = calloc(S,sizeof(int));
+
+	for(i=0;i<A;i++){
+		info->assentos[i] = -1;
+	}
 
 	while(pthread_mutex_trylock(&info_pontos[ponto_temp].lock) != 0){
 		if(++ponto_temp >= S){
@@ -202,6 +213,7 @@ void *carro(void *args){
 	printf("carro %d:\tinicio:%d,\tfim:%d\n", info->id, info->ponto_inicial, ponto_temp);
 
 	free(info->assentos);
+	free(info->pontos_a_parar);
 	return NULL;
 }
 
@@ -209,13 +221,56 @@ void *ponto(void *args){
 	args_ponto_t *temp = (args_ponto_t *) args;
 	ponto_t *info = info_pontos+temp->id;
 	info->id = temp->id;
+	info->id_carro = -1;
 
-	while(pthread_mutex_trylock(&lock_num_pontos)){	// Garante que num_pontos so e incrementado 1 por vez
-		pthread_yield();
-	}
+	pthread_mutex_lock(&lock_num_pontos);	// Garante que num_pontos so eh incrementado 1 por vez
+	pthread_mutex_lock(&info->fila.lock);
 	fifo_init(&info->fila);
 	num_pontos++;
 	pthread_mutex_unlock(&lock_num_pontos);
+	pthread_mutex_unlock(&info->fila.lock);
+
+	int i;
+
+	while(num_carros){
+		while(info->id_carro == -1){
+			if(num_carros == 0){
+				break;
+			}
+			pthread_yield();
+		}
+
+		if(num_carros == 0){
+			break;
+		}
+
+		while(info_carros[info->id_carro].pontos_a_parar[info->id]){	// Espera enquanto ha passageiros para descer neste ponto
+			pthread_yield();
+		}
+
+		pthread_mutex_lock(&info->fila.lock);
+
+		int id_passageiro_temp;
+		while(info->fila.size > 0 && info_carros[info->id_carro].assentos_disponiveis > 0){	// Existe pessoas na fila e vagas no onibus
+			for(i=0;i<A;i++){	// Procura uma vaga no onibus
+				id_passageiro_temp = info_carros[info->id_carro].assentos[i];
+				if(id_passageiro_temp == -1){
+					id_passageiro_temp = fifo_pop(&info->fila);
+					info_passageiros[id_passageiro_temp].estado = 'v';		// Significa que o passageiro esta 'viajando'
+					info_passageiros[id_passageiro_temp].id_carro = info->id_carro;	// No carro que esta parado neste ponto
+					pthread_mutex_unlock(&info->fila.lock);
+					break;
+				}
+				pthread_mutex_unlock(&info->fila.lock);
+			}
+			pthread_mutex_lock(&info->fila.lock);
+		}
+		pthread_mutex_unlock(&info->fila.lock);
+
+		info_carros[info->id_carro].ponto_atual = -1;
+		info->id_carro = -1;
+		pthread_cond_signal(&info_carros[info->id_carro].pode_rodar);
+	}
 
 
 	//printf("Oi, sou o ponto numero %d\n", pid);
