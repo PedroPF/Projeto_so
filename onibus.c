@@ -182,6 +182,8 @@ void *passageiro(void *args){
 		pthread_yield();
 	}
 
+	printf("Passageiro %d: assento %d\n",info->id, info->assento);
+
 	while(info->estado == 'v'){
 		if(info_carros[info->id_carro].ponto_atual == info->destino){
 			pthread_mutex_lock(&info_carros[info->id_carro].passageiro_em_movimento);
@@ -305,6 +307,7 @@ void *ponto(void *args){
 					info_passageiros[id_passageiro_temp].id_carro = info->id_carro;	// No carro que esta parado neste ponto
 					info_passageiros[id_passageiro_temp].assento = i;				// No assento i
 					info_carros[info->id_carro].assentos[i] = id_passageiro_temp;
+					info_carros[info->id_carro].pontos_a_parar[info->id]++;
 					pthread_mutex_unlock(&info->fila.lock);
 					info_passageiros[id_passageiro_temp].estado = 'v';
 					break;
